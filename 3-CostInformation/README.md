@@ -17,7 +17,7 @@ Instructions for use:
 1. Log on to Azure using `Connect-AzAccount`. Ensure that you have Cost Management Reader access to each subscription listed in the resources file (default `resources.json`)
 2. Navigate to the 3-CostInformation folder and run the script using `.\Get-CostInformation.ps1`. The script will generate a CSV file in the current folder.
 
-#### Documentation links
+#### Documentation links - cost retrieval
 Documentation regarding the Az.CostManagement module is not always straightforward. Helpful links are:
 
 | Documentation | Link |
@@ -94,7 +94,7 @@ Depending on the chosen output format, the script outputs four sets of data:
 | `prices` | Prices for each source/target region mapping by meter ID |
 | `savings` | An estimate of the potential savings for each target region |
 
-#### Documentation links
+#### Documentation links - region comparison
 
 | Documentation | Link |
 | -------- | ------- |

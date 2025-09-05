@@ -206,7 +206,7 @@ foreach ($inputRow in $inputTable) {
 
 # If at this point there are duplicate combinations of MeterName, ProductId, SkuName then
 # this indicates that there are multiple target meters for the same region, which will cause issues later
-$tempTable1 = $resultTable | Where-Object { $_.OrigRegion -eq "X" } | Select-Object -Property OrigMeterId, MeterName, ProductId, SkuName | Sort-Object 
+$tempTable1 = $resultTable | Where-Object { $_.OrigRegion -eq "X" } | Select-Object -Property OrigMeterId, MeterName, ProductId, SkuName | Sort-Object
 $tempTable2 = $tempTable1 | Sort-Object -Property OrigMeterId, MeterName, ProductId, SkuName -Unique
 
 if ($tempTable1.Count -ne $tempTable2.Count) {
