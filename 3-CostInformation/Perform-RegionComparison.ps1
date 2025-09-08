@@ -25,7 +25,7 @@ param (
     [string[]]$resourceCostFile = "resource_cost.json",  # the JSON file containing the resource cost information
     [string[]]$regions,                                  # array of regions to compare
     [string]$outputFormat = "console",                   # json, excel or csv. If not specified, output is written to the console
-    [string]$outputFilePrefix = "region_comparison"       # the output file prefix. Not used if outputFormat is not specified
+    [string]$outputFilePrefix = "region_comparison"      # the output file prefix. Not used if outputFormat is not specified
 )
 
 function Write-ToFileOrConsole {
@@ -68,10 +68,22 @@ function Write-ToFileOrConsole {
 
 }
 
+# Internal script parameters
+#$ErrorActionPreference = "Stop"
+#$VerbosePreference = "Continue"
+$meterIdBatchSize = 10
+$regionBatchSize = 10
+
 # Input checking
 # Check that the resource cost file exists
 if (-not (Test-Path -Path $resourceCostFile)) {
     Write-Error "Resource cost file '$resourceCostFile' does not exist."
+    exit 1
+}
+
+# Check that at least one region is specified
+if ($null -eq $regions -or $regions.Count -eq 0) {
+    Write-Error "At least one region must be specified."
     exit 1
 }
 
@@ -122,9 +134,9 @@ Write-Verbose "Querying pricing API for meter names and product IDs..."
 
 $inputTable = @()
 
-# Process meterIDs in batches of 10 to avoid URL length issues
-for ($i = 0; $i -lt $meterIds.Count; $i += 10) {
-    $batchMeterIds = $meterIds[$i..([math]::Min($i+9, $meterIds.Count-1))]
+# Process meterIDs in batches to avoid URL length issues
+for ($i = 0; $i -lt $meterIds.Count; $i += $meterIdBatchSize) {
+    $batchMeterIds = $meterIds[$i..([math]::Min($i+$meterIdBatchSize-1, $meterIds.Count-1))]
     $filterString = '$filter=currencyCode eq ''USD'''
     $filterString += " and type eq 'Consumption'"
     $filterString += " and isPrimaryMeterRegion eq true"
@@ -141,7 +153,9 @@ for ($i = 0; $i -lt $meterIds.Count; $i += 10) {
         exit 1
     }
 
-    foreach ($item in $queryResult.Items | Select-Object meterId, meterName, productId, skuName, armRegionName -Unique) {
+    # The tierMinimumUnits property is used to indicate bulk discounts for the same meter ID
+    # For comparison purposes we will use the lowest tierMinimumUnits value for each meter ID
+    foreach ($item in $queryResult.Items | Select-Object meterId, meterName, productId, skuName, armRegionName, unitOfMeasure -Unique) {
         $row = [PSCustomObject]@{
             "MeterId"          = $item.meterId
             "PreTaxCost"       = ($resourceCostData | Where-Object { $_.ResourceGuid -eq $item.meterId } | Measure-Object -Property PreTaxCost -Sum).Sum
@@ -150,6 +164,7 @@ for ($i = 0; $i -lt $meterIds.Count; $i += 10) {
             "SkuName"          = $item.skuName
             "ArmRegionName"    = $item.armRegionName
             "TierMinimumUnits" = ($queryResult.Items | Where-Object { $_.meterId -eq $item.meterId }).tierMinimumUnits | Sort-Object | Select-Object -First 1
+            "unitOfMeasure"   =  $item.unitOfMeasure
         }
         $inputTable += $row
     }
@@ -161,47 +176,90 @@ Write-ToFileOrConsole -outputFormat $outputFormat -outputFilePrefix $outputFileP
 Write-Output "Querying pricing API for region comparisons. Please be patient..."
 
 $resultTable = @()
+
+# Azure pricing has the unfortunate characteristic that some meter IDs have different units of measure in different regions.
+# Instead of trying to handle this and convert between units, it is better to exclude them and flag them for manual processing.
+$uomError = $false
+$uomErrorTable = @()
+
+$counter = 0
 foreach ($inputRow in $inputTable) {
+    $counter++
+    Write-Host -NoNewline "`rProcessing meter IDs: $counter of $($inputTable.Count)..."
     $tempRegions = $regions + $inputRow.ArmRegionName
-    $filterString = '$filter=currencyCode eq ''USD'''
-    $filterString += " and type eq 'Consumption'"
-    $filterString += " and isPrimaryMeterRegion eq true"
-    $filterString += " and meterName eq '$($inputRow.MeterName)'"
-    $filterString += " and productId eq '$($inputRow.ProductId)'"
-    $filterString += " and skuName eq '$($inputRow.SkuName)'"
-    $filterString += " and (armRegionName eq '$($tempRegions -join "' or armRegionName eq '")')"
 
-    Write-Verbose "Filter string in use is $filterString"
+    # Process regions in batches to avoid URL length issues
+    for ($i = 0; $i -lt $tempRegions.Count; $i += $regionBatchSize) {
+        $regionBatch = $tempRegions[$i..([math]::Min($i+$regionBatchSize-1, $tempRegions.Count-1))]
 
-    $uri = "$baseUri&$filterString"
-    $queryResult = Invoke-RestMethod -Uri $uri -Method Get
+        $filterString = '$filter=currencyCode eq ''USD'''
+        $filterString += " and type eq 'Consumption'"
+        $filterString += " and isPrimaryMeterRegion eq true"
+        $filterString += " and meterName eq '$($inputRow.MeterName)'"
+        $filterString += " and productId eq '$($inputRow.ProductId)'"
+        $filterString += " and skuName eq '$($inputRow.SkuName)'"
+        $filterString += " and (armRegionName eq '$($regionBatch -join "' or armRegionName eq '")')"
 
-    Write-Verbose "Query for meter ID $($inputRow.MeterId) returned $($queryResult.Count) items"
+        Write-Verbose "`r`nFilter string in use is $filterString"
 
-    # Exclude rows with retail price zero
-    $queryResult.Items = $queryResult.Items | Where-Object { $_.retailPrice -gt 0 }
+        $uri = "$baseUri&$filterString"
+        $queryResult = Invoke-RestMethod -Uri $uri -Method Get
 
-    # If there are multiple entries for the same meterId, filter to only those with the same tierMinimumUnits as the original region
-    $queryResult.Items = $queryResult.Items | Where-Object { $_.tierMinimumUnits -eq $inputRow.TierMinimumUnits }
+        $batchProgress = [int][Math]::Truncate($i / 10) + 1
+        Write-Verbose "`r`nQuery for meter ID $($inputRow.MeterId) batch $batchProgress returned $($queryResult.Count) items"
 
-    foreach ($item in $queryResult.Items) {
-        $row = [PSCustomObject]@{
-            "OrigMeterId"       = $inputRow.MeterId
-            "OrigRegion"        = if ($inputRow.ArmRegionName -eq $item.armRegionName) { "X" }
-            "OrigCost"          = $inputRow.PreTaxCost
-            "MeterId"           = $item.meterId
-            "ServiceFamily"     = $item.serviceFamily
-            "ServiceName"       = $item.serviceName
-            "MeterName"         = $item.meterName
-            "ProductId"         = $item.productId
-            "ProductName"       = $item.productName
-            "SkuName"           = $item.skuName
-            "UnitOfMeasure"     = $item.unitOfMeasure
-            "RetailPrice"       = $item.retailPrice
-            "Region"            = $item.armRegionName
+        # Exclude rows with retail price zero
+        $queryResult.Items = $queryResult.Items | Where-Object { $_.retailPrice -gt 0 }
+
+        # If there are multiple entries for the same meterId, filter to only those with the same tierMinimumUnits as the original region
+        $queryResult.Items = $queryResult.Items | Where-Object { $_.tierMinimumUnits -eq $inputRow.TierMinimumUnits }
+
+        # Check if rows have a different unit of measure from the input row
+        $uomCheck = $queryResult.Items | Where-Object { $_.unitOfMeasure -ne $inputRow.unitOfMeasure } | Select-Object meterId, unitOfMeasure
+        if ($uomCheck.Count -gt 0) {
+            $uomError = $true
+            foreach ($item in $uomCheck) {
+                $row = [PSCustomObject]@{
+                    "OrigMeterID"   = $inputRow.MeterId
+                    "OrigUoM"       = $inputRow.unitOfMeasure
+                    "TargetMeterID" = $item.meterId
+                    "TargetUoM"     = $item.unitOfMeasure
+                }
+                $uomErrorTable += $row
+            }
         }
-        $resultTable += $row
+
+        # Remove rows where the unit of measure is different from the original
+        $queryResult.Items = $queryResult.Items | Where-Object { $_.unitOfMeasure -eq $inputRow.unitOfMeasure }
+
+        foreach ($item in $queryResult.Items) {
+            $row = [PSCustomObject]@{
+                "OrigMeterId"       = $inputRow.MeterId
+                "OrigRegion"        = if ($inputRow.ArmRegionName -eq $item.armRegionName) { "X" }
+                "OrigCost"          = $inputRow.PreTaxCost
+                "MeterId"           = $item.meterId
+                "ServiceFamily"     = $item.serviceFamily
+                "ServiceName"       = $item.serviceName
+                "MeterName"         = $item.meterName
+                "ProductId"         = $item.productId
+                "ProductName"       = $item.productName
+                "SkuName"           = $item.skuName
+                "UnitOfMeasure"     = $item.unitOfMeasure
+                "RetailPrice"       = $item.retailPrice
+                "Region"            = $item.armRegionName
+            }
+            $resultTable += $row
+        }
     }
+}
+
+Write-Host ""
+
+# If there were any UoM errors, write them to the output
+if ($uomError) {
+    Write-Output "Warning: Different unit of measure detected between source and target region(s). These target meters will be excluded from the comparison."
+    Write-Output "Please review the uomerrors output and handle these meters manually."
+    Write-ToFileOrConsole -outputFormat $outputFormat -outputFilePrefix $outputFilePrefix -data $uomErrorTable -label "uomerrors"
 }
 
 # If at this point there are duplicate combinations of MeterName, ProductId, SkuName then

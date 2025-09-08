@@ -70,6 +70,8 @@ The Azure public pricing API is used, meaning that:
 * No login is needed for this step
 * Prices are *not* customer-specific, but are only used to calculate the relative cost difference between regions for each meter
 
+As customer discounts tend to be linear (for example, ACD is a flat rate discount across all PAYG Azure spend), the relative price differents between regions can still be used to make an intelligent estimate of the cost impact of a workload move.
+
 Instructions for use:
 
 1. Prepare a list of target regions for comparison. This can be provided at the command line or stored in a variable before calling the script.
@@ -93,6 +95,7 @@ Depending on the chosen output format, the script outputs four sets of data:
 | `pricemap` | An overview of which regions are cheaper / similarly-priced / more expensive for each meter ID |
 | `prices` | Prices for each source/target region mapping by meter ID |
 | `savings` | An estimate of the potential savings for each target region |
+| `uomerrors` | A list of any eventual mismatches of Unit Of Measure between regions |
 
 #### Documentation links - region comparison
 
