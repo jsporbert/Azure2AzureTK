@@ -185,7 +185,7 @@ $uomErrorTable = @()
 $counter = 0
 foreach ($inputRow in $inputTable) {
     $counter++
-    Write-Host -NoNewline "`rProcessing meter IDs: $counter of $($inputTable.Count)..."
+    Write-Progress -Activity "Processing meter IDs" -Status "Processing meter ID $counter of $($inputTable.Count)" -PercentComplete (($counter / $inputTable.Count) * 100)
     $tempRegions = $regions + $inputRow.ArmRegionName
 
     # Process regions in batches to avoid URL length issues
@@ -200,13 +200,13 @@ foreach ($inputRow in $inputTable) {
         $filterString += " and skuName eq '$($inputRow.SkuName)'"
         $filterString += " and (armRegionName eq '$($regionBatch -join "' or armRegionName eq '")')"
 
-        Write-Verbose "`r`nFilter string in use is $filterString"
+        Write-Verbose "Filter string in use is $filterString"
 
         $uri = "$baseUri&$filterString"
         $queryResult = Invoke-RestMethod -Uri $uri -Method Get
 
         $batchProgress = [int][Math]::Truncate($i / 10) + 1
-        Write-Verbose "`r`nQuery for meter ID $($inputRow.MeterId) batch $batchProgress returned $($queryResult.Count) items"
+        Write-Verbose "Query for meter ID $($inputRow.MeterId) batch $batchProgress returned $($queryResult.Count) items"
 
         # Exclude rows with retail price zero
         $queryResult.Items = $queryResult.Items | Where-Object { $_.retailPrice -gt 0 }
@@ -252,8 +252,6 @@ foreach ($inputRow in $inputTable) {
         }
     }
 }
-
-Write-Host ""
 
 # If there were any UoM errors, write them to the output
 if ($uomError) {
