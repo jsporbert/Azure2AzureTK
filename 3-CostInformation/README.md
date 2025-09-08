@@ -70,7 +70,7 @@ The Azure public pricing API is used, meaning that:
 * No login is needed for this step
 * Prices are *not* customer-specific, but are only used to calculate the relative cost difference between regions for each meter
 
-As customer discounts tend to be linear (for example, ACD is a flat rate discount across all PAYG Azure spend), the relative price differents between regions can still be used to make an intelligent estimate of the cost impact of a workload move.
+As customer discounts tend to be linear (for example, ACD is a flat rate discount across all PAYG Azure spend), the relative price difference between regions can still be used to make an intelligent estimate of the cost impact of a workload move.
 
 Instructions for use:
 
