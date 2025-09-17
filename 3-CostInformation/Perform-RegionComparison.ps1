@@ -5,7 +5,7 @@
     Requires ImportExcel module if Excel output is requested.
     PS1> Install-Module -Name ImportExcel
 
-.PARAMETER resourceCostFile
+.PARAMETER resourceFile
     A JSON file containing the resource cost information. This file is created by the Get-CostInformation.ps1 script.
 
 .PARAMETER targetRregions
@@ -22,7 +22,7 @@
 #>
 
 param (
-    [string[]]$resourceCostFile = "resource_cost.json",  # the JSON file containing the resource cost information
+    [string[]]$resourceFile = "resources.json",          # the JSON file containing the resource cost information
     [string[]]$regions,                                  # array of regions to compare
     [string]$outputFormat = "console",                   # json, excel or csv. If not specified, output is written to the console
     [string]$outputFilePrefix = "region_comparison"      # the output file prefix. Not used if outputFormat is not specified
@@ -73,11 +73,12 @@ function Write-ToFileOrConsole {
 #$VerbosePreference = "Continue"
 $meterIdBatchSize = 10
 $regionBatchSize = 10
+$baseUri = "https://prices.azure.com/api/retail/prices?api-version=2023-01-01-preview"
 
 # Input checking
-# Check that the resource cost file exists
-if (-not (Test-Path -Path $resourceCostFile)) {
-    Write-Error "Resource cost file '$resourceCostFile' does not exist."
+# Check that the resource file exists
+if (-not (Test-Path -Path $resourceFile)) {
+    Write-Error "Resource file '$resourceFile' does not exist."
     exit 1
 }
 
@@ -105,25 +106,23 @@ if ($outputFormat -eq "excel" -and -not (Get-Module -ListAvailable -Name ImportE
     exit 1
 }
 
-# Read the resource cost file into a variable
-$jsonContent = Get-Content -Path $resourceCostFile -Raw
-$resourceCostData = $jsonContent | ConvertFrom-Json
-if ($null -eq $resourceCostData -or $resourceCostData.Count -eq 0) {
-    Write-Error "No data found in $resourceCostFile. Please run the Get-CostInformation script first."
+# Read the resource file into a variable
+$jsonContent = Get-Content -Path $resourceFile -Raw
+$resourceData = $jsonContent | ConvertFrom-Json
+if ($null -eq $resourceData -or $resourceData.Count -eq 0) {
+    Write-Error "No data found in $resourceFile. Please run the Get-AzureServices.ps1 collection script first."
     exit 1
 }
 
-# Extract the unique meter IDs from the resource cost data
-$meterIds = $resourceCostData.ResourceGuid | Sort-Object -Unique
+# Extract the unique meter IDs from the resource data
+$meterIds = $resourceData.meterIds | Sort-Object -Unique
 if ($null -eq $meterIds -or $meterIds.Count -eq 0) {
-    Write-Error "No meter IDs found in $resourceCostFile. Please run the Get-CostInformation phase first."
+    Write-Error "No meter IDs found in $resourceFile. Please run the Get-AzureServices.ps1 collection script first."
     exit 1
 }
 
 Write-Verbose "Meter IDs: $($meterIds -join ', ')"
 Write-Verbose "Regions: $($regions -join ', ')"
-
-$baseUri = "https://prices.azure.com/api/retail/prices?api-version=2023-01-01-preview"
 
 # Query the API using meterID as the filter to get the product ID and Meter Name
 # For some services this will give unique results, but for others there may be multiple entries
@@ -158,7 +157,7 @@ for ($i = 0; $i -lt $meterIds.Count; $i += $meterIdBatchSize) {
     foreach ($item in $queryResult.Items | Select-Object meterId, meterName, productId, skuName, armRegionName, unitOfMeasure -Unique) {
         $row = [PSCustomObject]@{
             "MeterId"          = $item.meterId
-            "PreTaxCost"       = ($resourceCostData | Where-Object { $_.ResourceGuid -eq $item.meterId } | Measure-Object -Property PreTaxCost -Sum).Sum
+            #"PreTaxCost"       = ($resourceData | Where-Object { $_.ResourceGuid -eq $item.meterId } | Measure-Object -Property PreTaxCost -Sum).Sum
             "MeterName"        = $item.meterName
             "ProductId"        = $item.productId
             "SkuName"          = $item.skuName
@@ -185,8 +184,9 @@ $uomErrorTable = @()
 $counter = 0
 foreach ($inputRow in $inputTable) {
     $counter++
-    Write-Progress -Activity "Processing meter IDs" -Status "Processing meter ID $counter of $($inputTable.Count)" -PercentComplete (($counter / $inputTable.Count) * 100)
-    $tempRegions = $regions + $inputRow.ArmRegionName
+    Write-Progress -Activity "Processing meter IDs" -Status "Meter ID $counter of $($inputTable.Count)" -PercentComplete (($counter / $inputTable.Count) * 100)
+    # Add the source region to the regions to get source pricing information
+    $tempRegions = $regions + $inputRow.ArmRegionName | Sort-Object -Unique
 
     # Process regions in batches to avoid URL length issues
     for ($i = 0; $i -lt $tempRegions.Count; $i += $regionBatchSize) {
@@ -236,7 +236,7 @@ foreach ($inputRow in $inputTable) {
             $row = [PSCustomObject]@{
                 "OrigMeterId"       = $inputRow.MeterId
                 "OrigRegion"        = if ($inputRow.ArmRegionName -eq $item.armRegionName) { "X" }
-                "OrigCost"          = $inputRow.PreTaxCost
+                #"OrigCost"          = $inputRow.PreTaxCost
                 "MeterId"           = $item.meterId
                 "ServiceFamily"     = $item.serviceFamily
                 "ServiceName"       = $item.serviceName
@@ -277,15 +277,16 @@ foreach ($row in $resultTable) {
     $row | Add-Member -MemberType NoteProperty -Name "PriceDiffToOrigin" -Value ($row.RetailPrice - $origPrice)
     if ($origPrice -ne 0) {
         $row | Add-Member -MemberType NoteProperty -Name "PercentageDiffToOrigin" -Value ([math]::Round((($row.RetailPrice - $origPrice) / $origPrice), 2))
-        $row | Add-Member -MemberType NoteProperty -Name "CostDiffToOrigin" -Value ([math]::Round(($row.PercentageDiffToOrigin * $row.OrigCost), 2))
+        #$row | Add-Member -MemberType NoteProperty -Name "CostDiffToOrigin" -Value ([math]::Round(($row.PercentageDiffToOrigin * $row.OrigCost), 2))
     } else {
         $row | Add-Member -MemberType NoteProperty -Name "PercentageDiffToOrigin" -Value $null
-        $row | Add-Member -MemberType NoteProperty -Name "CostDiffToOrigin" -Value $null
+        #$row | Add-Member -MemberType NoteProperty -Name "CostDiffToOrigin" -Value $null
     }
 }
 
 Write-ToFileOrConsole -outputFormat $outputFormat -outputFilePrefix $outputFilePrefix -data $resultTable -label "prices"
 
+<# Future functionality - removed for now
 # Construct a table showing the total possible savings for each target region
 $savingsTable = @()
 foreach ($region in $regions) {
@@ -302,6 +303,7 @@ foreach ($region in $regions) {
 }
 
 Write-ToFileOrConsole -outputFormat $outputFormat -outputFilePrefix $outputFilePrefix -data $savingsTable -label "savings"
+#>
 
 # Construct a summary table for only the original meterIDs and region that shows the cheapest region(s) and the price difference
 $summaryTable = @()
