@@ -62,7 +62,7 @@ Function New-Worksheet {
     $headerRange.Style.Font.Color.SetColor([System.Drawing.Color]::White)
     for ($row = 2; $row -le ($reportData.Count + 1); $row++) {
         # Get the total number of columns in the worksheet
-        $colCount = $ws.Dimension.Columns
+        # $colCount = $ws.Dimension.Columns
         # Call the function to set column colors based on cell values
         If($startColumnNumber) {
             Set-ColumnColor -startColumn $startColumnNumber -cellValPositive $cellValPositive -cellValNegative $cellValNegative
@@ -174,7 +174,7 @@ If ($costComparisonPath) {
             MeterName   = $meterName
             ProductName = $productName
             SKUName     = $skuName
-        } 
+        }
         Foreach ($key in $pricingObj.PSObject.Properties.Name) {
             $costReportItem | Add-Member -MemberType NoteProperty -Name $key -Value $pricingObj.$key
         }
