@@ -25,7 +25,7 @@ These reports help you analyze service compatibility and cost differences across
 
 ## Dependencies
 
-- This script requires the `ImportExcel` PowerShell module. 
+- This script requires the `ImportExcel` PowerShell module.
 - The script requires you to have run either the `2-AvailabilityCheck/Get-Region.ps1` or `3-CostInformation/Perform-RegionComparison.ps1` or both scripts to generate the necessary JSON input files for availability and cost data.
 
 ## Usage Instructions
