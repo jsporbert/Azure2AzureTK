@@ -18,11 +18,13 @@ param(
 )
 
 Function Set-ColumnColor {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [Parameter(Mandatory = $true)] [object]$startColumn,
         [Parameter(Mandatory = $true)] [string]$cellValPositive,
         [Parameter(Mandatory = $true)] [string]$cellValNegative
     )
+    $colCount = $ws.Dimension.End.Column
     for ($col = $startColumn; $col -le $colCount; $col++) {
         $colLetter = [OfficeOpenXml.ExcelCellAddress]::GetColumnLetter($col)
         $cell = $ws.Cells["$colLetter$row"]
@@ -38,6 +40,7 @@ Function Set-ColumnColor {
 }
 
 Function New-Worksheet {
+     [CmdletBinding(SupportsShouldProcess = $true)]
     param (
         [Parameter(Mandatory = $true)][string]$WorksheetName,
         [Parameter(Mandatory = $true)][int]$LastColumnNumber,
@@ -61,11 +64,9 @@ Function New-Worksheet {
     $headerRange.Style.Fill.BackgroundColor.SetColor([System.Drawing.Color]::RoyalBlue)
     $headerRange.Style.Font.Color.SetColor([System.Drawing.Color]::White)
     for ($row = 2; $row -le ($reportData.Count + 1); $row++) {
-        # Get the total number of columns in the worksheet
-        # $colCount = $ws.Dimension.Columns
         # Call the function to set column colors based on cell values
         If($startColumnNumber) {
-            Set-ColumnColor -startColumn $startColumnNumber -cellValPositive $cellValPositive -cellValNegative $cellValNegative
+            Set-ColumnColor -startColumn $startColumnNumber -cellValPositive $cellValPositive -cellValNegative $cellValNegative -Confirm:$false
         }
     }
     $excelPkg.Save()
@@ -73,7 +74,7 @@ Function New-Worksheet {
 }
 
 # Collect all property names in first-seen order
-Function Get-Props {
+Function Get-PropertyArray {
     param (
         [array]$data
     )
@@ -138,9 +139,9 @@ If ($availabilityInfoPath) {
         }
     }
     $WorksheetName = "ServiceAvailability"
-    $allProps = Get-Props -data $reportData
+    $allProps = Get-PropertyArray -data $reportData
     $lastColumnNumber = $allProps.Count
-    New-Worksheet -WorksheetName $WorksheetName -LastColumnNumber $lastColumnNumber -reportData $reportData -startColumnNumber 5 -cellValPositive "Available" -cellValNegative "Not available"
+    New-Worksheet -WorksheetName $WorksheetName -LastColumnNumber $lastColumnNumber -reportData $reportData -startColumnNumber 5 -cellValPositive "Available" -cellValNegative "Not available" -Confirm:$false
 }
 
 If ($costComparisonPath) {
@@ -182,7 +183,7 @@ If ($costComparisonPath) {
         $costReportData += $costReportItem
     }
     $WorksheetName = "CostComparison"
-    $allProps = Get-Props -data $costReportData
+    $allProps = Get-PropertyArray -data $costReportData
     $lastColumnNumber = $allProps.Count
-    New-Worksheet -WorksheetName $WorksheetName -LastColumnNumber $lastColumnNumber -reportData $costReportData
+    New-Worksheet -WorksheetName $WorksheetName -LastColumnNumber $lastColumnNumber -reportData $costReportData -Confirm:$false
 }
