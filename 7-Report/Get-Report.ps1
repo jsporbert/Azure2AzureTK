@@ -18,7 +18,6 @@ param(
 )
 
 Function Set-ColumnColor {
-    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [Parameter(Mandatory = $true)] [object]$startColumn,
         [Parameter(Mandatory = $true)] [string]$cellValPositive,
@@ -40,7 +39,6 @@ Function Set-ColumnColor {
 }
 
 Function New-Worksheet {
-     [CmdletBinding(SupportsShouldProcess = $true)]
     param (
         [Parameter(Mandatory = $true)][string]$WorksheetName,
         [Parameter(Mandatory = $true)][int]$LastColumnNumber,
@@ -66,7 +64,7 @@ Function New-Worksheet {
     for ($row = 2; $row -le ($reportData.Count + 1); $row++) {
         # Call the function to set column colors based on cell values
         If($startColumnNumber) {
-            Set-ColumnColor -startColumn $startColumnNumber -cellValPositive $cellValPositive -cellValNegative $cellValNegative -Confirm:$false
+            Set-ColumnColor -startColumn $startColumnNumber -cellValPositive $cellValPositive -cellValNegative $cellValNegative
         }
     }
     $excelPkg.Save()
@@ -74,7 +72,7 @@ Function New-Worksheet {
 }
 
 # Collect all property names in first-seen order
-Function Get-PropertyArray {
+Function Get-Props {
     param (
         [array]$data
     )
@@ -139,9 +137,9 @@ If ($availabilityInfoPath) {
         }
     }
     $WorksheetName = "ServiceAvailability"
-    $allProps = Get-PropertyArray -data $reportData
+    $allProps = Get-Props -data $reportData
     $lastColumnNumber = $allProps.Count
-    New-Worksheet -WorksheetName $WorksheetName -LastColumnNumber $lastColumnNumber -reportData $reportData -startColumnNumber 5 -cellValPositive "Available" -cellValNegative "Not available" -Confirm:$false
+    New-Worksheet -WorksheetName $WorksheetName -LastColumnNumber $lastColumnNumber -reportData $reportData -startColumnNumber 5 -cellValPositive "Available" -cellValNegative "Not available"
 }
 
 If ($costComparisonPath) {
@@ -183,7 +181,7 @@ If ($costComparisonPath) {
         $costReportData += $costReportItem
     }
     $WorksheetName = "CostComparison"
-    $allProps = Get-PropertyArray -data $costReportData
+    $allProps = Get-Props -data $costReportData
     $lastColumnNumber = $allProps.Count
-    New-Worksheet -WorksheetName $WorksheetName -LastColumnNumber $lastColumnNumber -reportData $costReportData -Confirm:$false
+    New-Worksheet -WorksheetName $WorksheetName -LastColumnNumber $lastColumnNumber -reportData $costReportData
 }
